@@ -75,7 +75,7 @@ class MainActivity : Activity() {
 
     private fun renderShell() {
         val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setBackgroundColor(background)
+            orientation = LinearLayout.VERTICAL; setBackgroundColor(this@MainActivity.background)
             setPadding(dp(25), dp(14), dp(16), dp(12))
         }
         setContentView(root)
@@ -90,7 +90,7 @@ class MainActivity : Activity() {
         val actionRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         root.addView(actionRow, LinearLayout.LayoutParams(-1, dp(52)))
         search = EditText(this).apply {
-            hint = "Cari aplikasi"; setHintTextColor(muted); setTextColor(foreground)
+            hint = "Cari aplikasi"; setHintTextColor(muted); setTextColor(this@MainActivity.foreground)
             textSize = 15f; isSingleLine = true; setPadding(dp(16), 0, dp(10), 0)
             background = rounded(Color.rgb(29, 35, 44), 18)
             inputType = android.text.InputType.TYPE_CLASS_TEXT
