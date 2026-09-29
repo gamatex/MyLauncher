@@ -2,7 +2,10 @@ package id.alur.launcher
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.AppOpsManager
 import android.app.role.RoleManager
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.ResolveInfo
@@ -11,6 +14,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Process
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
@@ -21,6 +25,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -97,8 +102,9 @@ class MainActivity : Activity() {
         }
         actionRow.addView(search, LinearLayout.LayoutParams(0, dp(48), 1f))
         val recents = text("▣", 26f, accent).apply {
-            gravity = Gravity.CENTER; contentDescription = "Buka Recent Apps"
-            setOnClickListener { openRecents() }
+            gravity = Gravity.CENTER; contentDescription = "Aplikasi terbaru"
+            setOnClickListener { openRecentPanel() }
+            setOnLongClickListener { openSystemRecents(); true }
         }
         actionRow.addView(recents, LinearLayout.LayoutParams(dp(54), dp(48)))
 
@@ -206,11 +212,64 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun openRecents() {
-        if (RecentsService.active?.showRecents() == true) return
+    private fun hasUsageAccess(): Boolean {
+        val ops = getSystemService(AppOpsManager::class.java)
+        return ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), packageName) == AppOpsManager.MODE_ALLOWED
+    }
+
+    private fun recentApps(): List<App> {
+        val now = System.currentTimeMillis()
+        val usage = getSystemService(UsageStatsManager::class.java)
+        val events = usage.queryEvents(now - 3L * 24 * 60 * 60 * 1000, now)
+        val event = UsageEvents.Event()
+        val latest = mutableMapOf<String, Long>()
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED && event.packageName != packageName) {
+                latest[event.packageName] = event.timeStamp
+            }
+        }
+        val byPackage = apps.groupBy { it.component.packageName }
+        return latest.entries.sortedByDescending { it.value }
+            .mapNotNull { byPackage[it.key]?.firstOrNull() }.take(12)
+    }
+
+    private fun openRecentPanel() {
+        if (!hasUsageAccess()) {
+            AlertDialog.Builder(this).setTitle("Izinkan riwayat penggunaan")
+                .setMessage("Alur perlu Akses Penggunaan untuk menampilkan daftar aplikasi yang baru dibuka. Data hanya dipakai di ponsel ini. Setelah mengaktifkan Alur Launcher, kembali dan ketuk tombol ▣ lagi.")
+                .setPositiveButton("Buka pengaturan") { _, _ -> startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
+                .setNegativeButton("Nanti", null).show()
+            return
+        }
+        val recent = recentApps()
+        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(8), dp(18), dp(8)) }
+        val scroll = ScrollView(this)
+        panel.addView(scroll, LinearLayout.LayoutParams(-1, dp(450)))
+        val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        scroll.addView(rows)
+        val dialog = AlertDialog.Builder(this).setTitle("Aplikasi terbaru")
+            .setView(panel)
+            .setNeutralButton("Overview sistem") { _, _ -> openSystemRecents() }
+            .setNegativeButton("Tutup", null).create()
+        if (recent.isEmpty()) {
+            rows.addView(text("Belum ada aplikasi terbaru. Buka beberapa aplikasi, lalu kembali ke sini.", 14f, muted))
+        } else recent.forEach { app ->
+            val row = appRow(app, app.key in favorites())
+            row.setOnClickListener { dialog.dismiss(); launch(app) }
+            rows.addView(row)
+        }
+        dialog.show()
+    }
+
+    private fun openSystemRecents() {
+        if (RecentsService.active?.showRecents() == true) {
+            Toast.makeText(this, "Permintaan Overview dikirim ke sistem", Toast.LENGTH_SHORT).show()
+            return
+        }
         AlertDialog.Builder(this)
-            .setTitle("Aktifkan tombol Recent Apps")
-            .setMessage("Di pengaturan Aksesibilitas, pilih 'Tombol Recent Apps Alur' lalu aktifkan. Layanan ini hanya membuka Overview saat tombol ditekan dan tidak membaca isi layar.")
+            .setTitle("Overview sistem tidak tersedia")
+            .setMessage("Di pengaturan Aksesibilitas, pilih 'Tombol Recent Apps Alur' lalu aktifkan. Jika sudah aktif tetapi Overview tetap tidak tampil, gunakan daftar Aplikasi terbaru Alur untuk berpindah aplikasi.")
             .setPositiveButton("Buka pengaturan") { _, _ -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
             .setNegativeButton("Nanti", null).show()
     }
